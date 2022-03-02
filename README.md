@@ -1,6 +1,6 @@
 # Forgerock Do (frodo)
 
-This is the ForgeROck DO (frodo) CLI executable. This is a statically linked binary which can be cross compiled for multiple platforms (Linux, MacOS, Windows etc.).
+This is the ForgeROck DO (frodo) CLI. This is a statically linked binary which can be cross compiled for multiple platforms (Linux, MacOS, Windows etc.).
 
 ## Features
 
@@ -23,16 +23,98 @@ This is the ForgeROck DO (frodo) CLI executable. This is a statically linked bin
 
 `frodo` can't export passwords (including API secrets, etc), so these need to be manually added back to an imported tree or alternatively, export the source tree to a file, edit the file to add the missing fields before importing. Any dependencies _other than_ scripts and email templates, needed for a journey/tree, must also exist prior to import, for example inner-trees and custom nodes.
 
+## Getting the binaries
+
+Links to the executables
+
 ## Usage
 
-Depending on your OS, you can invoke `frodo-linux`, `frodo-macos` or `frodo-windows.exe` binary.
-`frodo` uses commands and sub-commands to provide the functionality stated above. All commands support the help argument as such
+You can invoke `frodo` from the terminal as long as you're in the directory or sourced/added it to the path.
 
-```shell
-frodo journey -h 
+To get started run the command below to get tenant info. This command will also create a connection file and stores it on disk, more on connections later.
+
+```console
+frodo info https://login.acme.forgeblocks.io/am <username> <password>
+```
+
+Once `frodo` saves a connection, you don't have to provide the `host`, `username`, and `password` arguments. You can reference your connection using any unique substring from your host
+
+```console
+frodo info acme
+```
+
+You interact with `frodo` using commands and options. You can see the list of options by using the `help` command
+
+```console
+frodo help
+```
+
+```console
+Usage: frodo [options] [command]
+
+Options:
+  -v, --version                            output the version number
+  -h, --help                               display help for command
+
+Commands:
+  connections                              Manage connection profiles.
+  info [options] <host> [user] [password]  Print versions and tokens.
+  journey                                  Manage journeys/trees.
+  script                                   Manage scripts.
+  idm                                      Manage IDM configuration.
+  logs <host>                              View Identity Cloud logs.
+  help [command]                           display help for command
+```
+
+Or to view options for a specific command
+
+```console
+frodo help journey
+```
+
+```console
 Usage: frodo journey [options] [command]
 
 Manage journeys/trees.
+
+Options:
+  -h, --help                                            Help
+
+Commands:
+  list [options] <host> [realm] [user] [password]       List all the journeys/trees in a realm.
+  describe [options] [host] [realm] [user] [password]   If -h is supplied, describe the journey/tree indicated by -t, or all journeys/trees in the realm if no -t is supplied, otherwise describe the journey/tree export file     
+                                                        indicated by -f.
+  export [options] <host> [realm] [user] [password]     Export journeys/trees.
+  import [options] <host> [realm] [user] [password]     Import journey/tree.
+  importAll [options] <host> [realm] [user] [password]  Import all the trees in a realm.
+  prune [options] <host> [realm] [user] [password]      Prune orphaned configuration artifacts left behind after deleting authentication trees. You will be prompted before any destructive operations are performed.
+  help [command]                                        display help for command
+  ```
+
+```console
+frodo journey help export
+```
+
+```console
+Usage: frodo journey export [options] <host> [realm] [user] [password]
+
+Export journeys/trees.
+
+Arguments:
+  host               Access Management base URL, e.g.: https://cdk.iam.example.com/am. To use a connection profile, just specify a unique substring.
+  realm              Realm. Specify realm as '/' for the root realm or 'realm' or '/parent/child' otherwise. (default: "__default__realm__")
+  user               Username to login with. Must be an admin user with appropriate rights to manage authentication journeys/trees.
+  password           Password.
+
+Options:
+  -m, --type <type>  Override auto-detected deployment type. Valid values for type: [Classic] - A classic Access Management-only deployment with custom layout and configuration. [Cloud] - A ForgeRock Identity Cloud
+                     environment. [ForgeOps] - A ForgeOps CDK or CDM deployment. The detected or provided deployment type controls certain behavior like obtaining an Identity Management admin token or not and whether to        
+                     export/import referenced email templates or how to walk through the tenant admin login flow of Identity Cloud and handle MFA (choices: "classic", "cloud", "forgeops")
+  -t, --tree <tree>  Name of a journey/tree. If specified, -a and -A are ignored.
+  -f, --file <file>  Name of the file to write the exported journey(s) to. Ignored with -A.
+  -a, --all          Export all the journeys/trees in a realm. Ignored with -t.
+  -A, --allSeparate  Export all the journeys/trees in a realm as separate files <journey/tree name>.json. Ignored with -t or -a.
+  -h, --help         Help
   ```
 
 ### Commands
@@ -45,41 +127,25 @@ Manage journeys/trees.
 
 #### Connections
 
-Use this command to list, add, or delete your connections. The CLI creates connection configurations automatically when you use other commands, so you don't have to run this command to initiate a connection.
+Use this command to list, add, or delete your connections. `frodo` saves connection info automatically when you use other commands like in our `info` command.
 
 ##### Examples
 
 List saved connections
 
-```shell
+```console
 frodo connections list
 ```
 
 ##### Sample output
 
-The command displays the connections found in the **`frodorc`** file, located in the user's directory.
+The command displays the connections found in the **`frodorc`** file, located in `$USERHOME/.frodo/.frodorc`.
 
-```shell
+```console
 [Host] : [Username]
-- [https://openam-ali-demo.forgeblocks.com/am] : [ali.falahi@forgerock.com]
+- [https://login.acme.com/am] : [username]
 Any unique substring of a saved host can be used as the value for host parameter in all commands
 ```
-
-The command below lists all journeys in the specified realm, but the main idea here is when you supply the host, username, and password frodo will automatically save the connection in the **`frodorc`** file
-
-```shell
-frodo journey list https://<tenant-name>/am <realm> <username> <password>
-```
-
-One the connection is saved, you don't need to include the host, username, and password in your future commands. You'll simply use a substring in your tenant/forgerock deployment domain name to define the connection. For example, my tenant name is `https://demo-uniqueValue.forgeblocks.com/am`
-
-**`uniqueValue`** is a unique substring in my tenant url, and it's unique across my saved connections; this enables me to execute the same command from above as such
-
-```shell
-frodo journey list uniqueValue
-```
-
-**`frodo`** will automatically parse this unique string, and check your saved connections for a match. It will then use the connection details to authenticate and list journeys.
 
 #### IDM
 
@@ -89,19 +155,19 @@ This command is all about IDM configurations. It supports list, export, and impo
 
 List IDM configuration objects. You'll notice that we don't need to specific the realm here and we're reading from existing connection info
 
-```shell
-frodo idm list uniqueValue
+```console
+frodo idm list acme
 ```
 
 Or by supplying the host, username, and password
 
-```shell
-frodo idm list https://<tenant-name>/am <username> <password>
+```console
+frodo idm list https://login.acme.forgeblocks.io/am <username> <password>
 ```
 
 ###### Sample output
 
-```shell
+```console
 Listing all IDM configuration objects...
 ForgeRock Identity Cloud detected.
 Connected to ForgeRock Access Management 7.2.0-2021-11-SNAPSHOT Build 978ae0d483aa2da07826b3bdff286c60ccb41a4e (2022-February-09 11:40)
@@ -113,60 +179,175 @@ Connected to ForgeRock Access Management 7.2.0-2021-11-SNAPSHOT Build 978ae0d483
 - emailTemplate/baselineEmailVerification
 ```
 
-Export IDM configuration to a file. If you don't specify the file option then the configuration will be printed to `STDOUT`. The export is in JSON format. The `-N` options is the name of the configuration object
+Exports IDM configuration in JSON format to a file or `STDOUT` if you don't specify the file option. The `-N` option is the name of the configuration object
 
-```shell
-frodo idm export ali -N sync -f idm-sync.json
+```console
+frodo idm export acme -N <configuration-name> -f <file-name.json>
+```
+
+```console
+frodo idm export https://login.acme.forgeblocks.io/am <username> <password> -N <configuration-name> -f <file-name.json>
 ```
 
 #### Info
 
-#### Journey
+`info` prints version information, session token, access token, and tokenId to `STDOUT`.
 
-This will export a journey named `Registration` in `alpha` realm and save the contents in a file called `journey-Registration.json`. If the `-f <filename>` is omitted, the journey JSON data is dumped to STDOUT.
+##### Examples
 
-```shell
-./frodo-linux journey -h https://<forgerock-cloud-tenant>/am -u <tenant.admin@tenant.com> -p my_5up3rs3cr3tp@ssw0rd import -t ImportTest -r alpha -f journey-ImportTest.json
+```console
+frodo info acme
 ```
 
-The above will import the same journey.
+```console
+frodo info <https://login.acme.forgeblocks.io/am> <username> <password>
+```
+
+##### Sample output
+
+```console
+Printing versions and tokens...
+ForgeRock Identity Cloud detected.
+Connected to ForgeRock Access Management 7.2.0-2021-11-SNAPSHOT Build 978ae0d483aa2da07826b3bdff286c60ccb41a4e (2022-February-09 11:40)
+Cookie name: <tenant-cookie-name>
+Session token: <your-session-token>
+Bearer token: <your-bearer-token>
+```
+
+#### Journey
+
+The journey command can list, export, import, prune and describe journeys in a specific realm. You can view all options by using `frodo help journey` command.
+
+#### Examples
+
+These examples assume a saved connection
+
+List all Journeys in a realm
+
+```console
+frodo journey list acme <realm-name>
+```
+
+Export a specific journey. If you don't supply the `-f` options `frodo` will generate a filename based on the journey name
+
+```console
+frodo journey export acme <realm-name> -t <journey-name>
+```
+
+Import a Journey from a `JSON` file
+
+```console
+frodo journey import acme <realm-name> -t <journey-name> -f <file-name>
+```
+
+#### Logging
+
+Todo
+
+## Contributing
+
+Pull requests are welcome. For major changes, please open an issue first to discuss what and why you'd like to change.
 
 ## Developing
 
 ### Prerequisites
 
-- Install nodejs (tested on v14.9.0) and npm (included with node)
+- Install nodejs (tested on v14.9.0 and 16.13.0) and npm (included with node)
 
 ### Process
 
-- Clone this repo
+#### Clone this repo
 
-```shell
+```console
 cd $HOME # or any other directory you wish to clone to
 git clone git@github.com:rockcarver/frodo.git
 ```
 
-- Build
+#### Install via NPM
 
-```shell
+```console
 cd $HOME/frodo
 npm install
-npm install -g pkg
-pkg -C GZip .
+npm i -g
 ```
 
-This will build `frodo` in local directory. There are three binaries created
+frodo will be installed as a global npm package. This method is helpful when developing and testing.
 
-```shell
-frodo-linux
-frodo-macos
-frodo-win.exe
+#### Build
+
+To build locally we need to do a couple of extra steps due to a limitation with the `pkg` module we're using to distribute binaries. `pkg` [doesn't support ES6](https://github.com/vercel/pkg/issues/1291) modules as of yet, so we have to transpile to commonJS then build.
+
+There should be a `dist` folder when you cloned the repo from Github, the binaries will get pushed there. We're using a `gulp` script to transpile ES6 module to commonJS and then `pkg` can create the binary for the respective OS. For Mac OS you'll have to sign the binary
+
+##### For windows and Linux
+
+```console
+cd $HOME/frodo
+npm install
+npm install -g pkg gulp
+gulp
+cd ./dist
+npm i
+#For Windows
+pkg -C Gzip -t node16-win-x64 --out-path bin/win .
+#For Linux
+pkg -C Gzip -t node16-linux-x64 --out-path bin/linux .
 ```
 
-### Run
+##### For MacOS
+
+For MacOS we need to sign the binaries with an Apple Developer Cert.
+
+```console
+# create variables
+CERTIFICATE_PATH=<YOUR_CERTIFICATE_PATH>
+INTERMEDIATE_CERTIFICATE_PATH=<YOUR_INTERMEDIATE_CERTIFICATE_PATH>
+KEYCHAIN_PATH=<YOUR_TEMP_KEYCHAIN_PATH>
+KEYCHAIN_PASSWORD=<KEY_CHAIN_PASSWORD>
+DEVELOPMENT_CERTIFICATE_PASSPHRASE=<YOUR_CERT_PASSPHRASE>
+
+#create temp keychain
+security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+#import certs to keychain
+security import $CERTIFICATE_PATH -P "$DEVELOPMENT_CERTIFICATE_PASSPHRASE" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+security import $INTERMEDIATE_CERTIFICATE_PATH -P "$DEVELOPMENT_CERTIFICATE_PASSPHRASE" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+security list-keychain -d user -s $KEYCHAIN_PATH
+
+# import certificate to keychain
+security import $CERTIFICATE_PATH -P "$DEVELOPMENT_CERTIFICATE_PASSPHRASE" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+security import $INTERMEDIATE_CERTIFICATE_PATH -P "$DEVELOPMENT_CERTIFICATE_PASSPHRASE" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+security list-keychain -d user -s $KEYCHAIN_PATH
+
+cd $HOME/frodo
+npm install
+npm install -g pkg gulp
+gulp
+
+cd ./dist
+npm i
+pkg -C Gzip -t node16-macos-x64 --out-path bin/macos .
+
+cd ./dist/bin/macos
+codesign -f -s 'DEV_ID' --timestamp --deep frodo
+```
+
+This will build `frodo` in each local directory respective to the OS target you chose
+
+```console
+./dist/bin/linux/frodo
+./dist/bin/macos/frodo
+./dist/bin/win/frodo
+```
+
+#### Run
 
 `frodo` is self contained, statically linked, so no dependencies should be needed. It can be run as:
 
-```shell
-$HOME/frodo/frodo-linux # or the platform equivalent binary
+```console
+$HOME/frodo/frodo # or the platform equivalent binary
 ```
+
+We recommend sourcing, or adding it to the path if you're on windows, to make it easier to call from your terminal without switching directories

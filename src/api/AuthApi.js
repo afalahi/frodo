@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { generateAmApi, generateOauth2Api } from './BaseApi.js';
 import fs from 'fs';
 import os from 'os';
 import url from 'url';
@@ -16,14 +16,36 @@ const serverInfoURLTemplate = "%s/json/serverinfo/%s"
 const authorizeURLTemplate = "%s/oauth2%s/authorize"
 const accessTokenURLTemplate = "%s/oauth2%s/access_token"
 const redirectURLTemplate = "/platform/appAuthHelperRedirect.html"
-const oauthClientURLTemplate = "%s/json%s/realm-config/agents/OAuth2Client/%s"
 
 const idmAdminScope = "fr:idm:*"
-const apiVersion = "resource=2.0, protocol=1.0"
+const authenticationApiVersion = "resource=2.0, protocol=1.0"
+const getAuthenticationApiConfig = () => {
+    return {
+        apiVersion: authenticationApiVersion
+    };
+};
+const oauth2ApiVersion = "resource=1.0, protocol=1.0"
+const getOauth2ApiConfig = () => {
+    return {
+        apiVersion: oauth2ApiVersion
+    };
+};
+const serverInfoApiVersion = "resource=1.1"
+const getServerInfoApiConfig = () => {
+    return {
+        apiVersion: serverInfoApiVersion
+    };
+};
+const serverVersionoApiVersion = "resource=1.0"
+const getServerVersionApiConfig = () => {
+    return {
+        apiVersion: serverVersionoApiVersion
+    };
+};
+
 let adminClientId = "idmAdminClient"
 
 const realmPathTemplate = "/realms/%s";
-const amApiVersion = "resource=1.0";
 
 const connFile = {
     "name": "./connections.json",
@@ -31,9 +53,11 @@ const connFile = {
     "indentation": 4
 };
 
+const getConnectionFolder = () => `${os.homedir()}/.frodo`;
+
 export function getConnectionFileName() {
-    return (os.homedir() + "/.frodorc");
-}
+    return (os.homedir() + "/.frodo/.frodorc");
+};
 
 function findByWildcard(data, tenant) {
     for(const savedTenant in data) {
@@ -63,9 +87,16 @@ export function listConnections() {
 
 export function initConnections() {
     // create connections.json file if it doesn't exist
+    const folderName = getConnectionFolder()
     const filename = getConnectionFileName();
-    if (!fs.existsSync(filename)) {
-        fs.writeFileSync(filename, JSON.stringify({}, null, connFile.indentation));
+    if(!fs.existsSync(folderName)) {
+        fs.mkdirSync(folderName, {recursive:true})
+            if (!fs.existsSync(filename)) {
+              fs.writeFileSync(
+                filename,
+                JSON.stringify({}, null, connFile.indentation)
+              );
+            }
     }
     // encrypt the password from clear text to aes-256-GCM
     else {
@@ -88,11 +119,10 @@ export function initConnections() {
 export async function getConnection() {
     try {
         const filename = getConnectionFileName();
-        const data = fs.readFileSync(filename, connFile.options);
-        const connectionsData = JSON.parse(data);
-        const tenantData = findByWildcard(connectionsData, storage.session.getItem("tenant"));
+        const connectionsData = JSON.parse(fs.readFileSync(filename, connFile.options));
+        const tenantData = findByWildcard(connectionsData, storage.session.getTenant());
         if(!tenantData) {
-            console.error(`No saved credentials for tenant ${storage.session.getItem("tenant")}. Please specify credentials on command line`);
+            console.error(`No saved credentials for tenant ${storage.session.getTenant()}. Please specify credentials on command line`);
             return null;
         }
         return {
@@ -146,9 +176,10 @@ function getRealmUrl(realm) {
     return realmPath
 }
 
-async function getCookieName(tenant) {
+async function getCookieName() {
     try {
-        const serverinfo = await axios.get(util.format(serverInfoURLTemplate, storage.session.getItem("tenant"), "*"));
+        const urlString = util.format(serverInfoURLTemplate, storage.session.getTenant(), "*");
+        const serverinfo = await generateAmApi(getServerInfoApiConfig()).get(urlString, {});
         return serverinfo.data.cookieName;
     } catch(e) {
         console.error("error getting cookie name: " + e)
@@ -205,7 +236,7 @@ function determineDefaultRealm(deploymentType) {
 async function determineDeployment() {
 	const fidcClientId = "idmAdminClient";
 	const forgeopsClientId = "idm-admin-ui";
-    let response, response2;
+    let response = {};
 
     const verifier = base64url.encode(randomBytes(32));
     const challenge = base64url.encode(createHash('sha256').update(verifier).digest());
@@ -213,24 +244,19 @@ async function determineDeployment() {
     const authorizeURL = util.format(authorizeURLTemplate, storage.session.getTenant(), "");
     const redirectURL = url.resolve(storage.session.getTenant(), redirectURLTemplate);
 
-    const headers = {
-        "Accept-API-Version": amApiVersion,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": `${storage.session.getCookieName()}=${storage.session.getCookieValue()}`
-    };
     let bodyFormData = `redirect_uri=${redirectURL}&scope=${idmAdminScope}&response_type=code&client_id=${fidcClientId}&csrf=${storage.session.getCookieValue()}&decision=allow&code_challenge=${challenge}&code_challenge_method=${challengeMethod}`;
    
     let deploymentType = global.CLASSIC_DEPLOYMENT_TYPE_KEY;
     try {
-        response = await axios.post(authorizeURL, bodyFormData, {headers: headers, maxRedirects: 0});
+        response = await generateOauth2Api(getOauth2ApiConfig()).post(authorizeURL, bodyFormData, {maxRedirects: 0});
     } catch(e) {
-        if(e.response.status == 302) {
+        if(e.response && e.response.status == 302) {
             console.log("ForgeRock Identity Cloud detected.");
             deploymentType = global.CLOUD_DEPLOYMENT_TYPE_KEY;
         } else {
             try {
-                bodyFormData = `redirect_uri=${redirectURL}&scope=${idmAdminScope}&response_type=code&client_id=${forgeopsClientId}&csrf=${storage.session.getCookieValue()}&decision=allow&code_challenge=${challenge}&code_challenge_method=${challengeMethod}`;            
-                response = await axios.post(authorizeURL, bodyFormData, {headers: headers, maxRedirects: 0});    
+                bodyFormData = `redirect_uri=${redirectURL}&scope=${idmAdminScope}&response_type=code&client_id=${forgeopsClientId}&csrf=${storage.session.getCookieValue()}&decision=allow&code_challenge=${challenge}&code_challenge_method=${challengeMethod}`;
+                response = await generateOauth2Api(getOauth2ApiConfig()).post(authorizeURL, bodyFormData, {maxRedirects: 0});
             } catch(ex) {
                 if(ex.response.status == 302) {
                     adminClientId = forgeopsClientId;
@@ -247,13 +273,9 @@ async function determineDeployment() {
 }
 
 async function getVersionInfo() {
-    const headers = {
-        "Cookie": `${storage.session.getCookieName()}=${storage.session.getCookieValue()}`
-    };
-    // console.log(headers);
     try {
-        const serverInfoURL = util.format(serverInfoURLTemplate, storage.session.getTenant(), "version")
-        const response = await axios.get(serverInfoURL, {headers: headers});
+        const serverVersionURL = util.format(serverInfoURLTemplate, storage.session.getTenant(), "version")
+        const response = await generateAmApi(getServerVersionApiConfig()).get(serverVersionURL, {});
         if("version" in response.data) {
             let versionString = response.data.version;
             const rx = /([\d]\.[\d]\.[\d](\.[\d])*)/g;
@@ -261,7 +283,7 @@ async function getVersionInfo() {
             console.log("Connected to " + response.data.fullVersion);
             return version[0];
         } else {
-            console.error("error getting version info")
+            console.error("error getting version info: version not in response data")
         }
     } catch(e) {
         console.error("error getting version info - ", e.message)
@@ -269,26 +291,28 @@ async function getVersionInfo() {
 }
 
 async function authenticate() {
-    storage.session.setCookieName(await getCookieName(storage.session.getTenant()));
+    storage.session.setCookieName(await getCookieName());
     try {
-        const authURL = util.format("%s/json%s/authenticate", storage.session.getTenant(), getRealmUrl("/"))
-        const headers = {
-            "Content-Type": "application/json",
-            "Accept-API-Version": apiVersion,
-            "X-OpenAM-Username": storage.session.getUsername(),
-            "X-OpenAM-Password": storage.session.getPassword()
-        };
-        const data = {}
-        const response = await axios.post(authURL, data, {headers: headers});
+        const urlString = util.format("%s/json%s/authenticate", storage.session.getTenant(), getRealmUrl("/"))
+        const response = await generateAmApi(getAuthenticationApiConfig()).post(
+            urlString,
+            {},
+            {
+                headers: {
+                    "X-OpenAM-Username": storage.session.getUsername(),
+                    "X-OpenAM-Password": storage.session.getPassword()
+                }
+            }
+        );
         // console.log(response.data);
-        const headers2 = {
-            "Content-Type": "application/json",
-            "Accept-API-Version": apiVersion
-        };
         const skip2FA = await checkAndHandle2FA(response.data);
         let response2 = {};
         if(skip2FA.need2fa) {
-            response2 = await axios.post(authURL, skip2FA.payload, {headers: headers2});
+            response2 = await generateAmApi(getAuthenticationApiConfig()).post(
+                urlString,
+                skip2FA.payload,
+                {}
+            );
         } else {
             response2.data = skip2FA.payload;
         }
@@ -311,8 +335,14 @@ async function authenticate() {
         if(e.response && e.response.status == 401) {
             console.error("error authenticating - %s", e.message);
             console.error("+++ likely cause, bad credentials +++");
-        } else {
-            console.error("error authenticating - ", e);
+            return null;
+        }
+        else if (e.message && e.message == "self signed certificate") {
+            console.error("error authenticating - %s", e.message);
+            console.error("+++ use -k, --insecure option to allow +++");
+        }
+        else {
+            console.error("error authenticating - %s", e.message);
             return null;
         }
     }
@@ -320,20 +350,20 @@ async function authenticate() {
 
 async function getAuthCode(authorizeURL, redirectURL, codeChallenge, codeChallengeMethod)  {
     try {
-        // const authURL = util.format("%s/json%s/authenticate", storage.session.getTenant(), GetRealmUrl("/"))
-        const headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Cookie": `${storage.session.getCookieName()}=${storage.session.getCookieValue()}`
-        };
         let bodyFormData = `redirect_uri=${redirectURL}&scope=${idmAdminScope}&response_type=code&client_id=${adminClientId}&csrf=${storage.session.getCookieValue()}&decision=allow&code_challenge=${codeChallenge}&code_challenge_method=${codeChallengeMethod}`;
-        //console.error('bodyFormData: ', bodyFormData);
-        const response = await axios.post(authorizeURL, bodyFormData, {headers: headers});
+        const response = await generateOauth2Api(getOauth2ApiConfig()).post(
+            authorizeURL,
+            bodyFormData,
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'}
+            }
+        );
         if(response.status < 200 || response.status > 399) {
             console.error("error getting auth code");
             console.error("likely cause: mismatched parameters with OAuth client config");
             return null;
         }
-        // console.log(response);
         const redirectLocationURL = response.request.res.responseUrl;
         const queryObject = url.parse(redirectLocationURL, true).query;
         if("code" in queryObject) {
@@ -361,9 +391,6 @@ async function getAccessToken() {
             console.error("error getting auth code");
             return null;
         }
-        const headers = {
-            "Content-Type": "application/x-www-form-urlencoded"
-        };
         let response = null;
         if(storage.session.getDeploymentType() == global.CLOUD_DEPLOYMENT_TYPE_KEY) {
             const auth = {
@@ -371,10 +398,10 @@ async function getAccessToken() {
                 password: adminClientPassword
             };
             let bodyFormData = `redirect_uri=${redirectURL}&grant_type=authorization_code&code=${authCode}&code_verifier=${verifier}`;
-            response = await axios.post(accessTokenURL, bodyFormData, {auth: auth}, {headers: headers})
+            response = await generateOauth2Api(getOauth2ApiConfig()).post(accessTokenURL, bodyFormData, {auth: auth});
         } else {
             let bodyFormData = `client_id=${adminClientId}&redirect_uri=${redirectURL}&grant_type=authorization_code&code=${authCode}&code_verifier=${verifier}`;
-            response = await axios.post(accessTokenURL, bodyFormData, {headers: headers})
+            response = await generateOauth2Api(getOauth2ApiConfig()).post(accessTokenURL, bodyFormData);
         }
         if(response.status < 200 || response.status > 399) {
             console.error("access token call returned " + response.status);
