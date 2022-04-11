@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { initConnections } from './api/AuthApi.js';
+import admin from './commands/admin/cmd.js';
 import connections from './commands/connections/cmd.js';
 import idm from './commands/idm/cmd.js';
 import info from './commands/info/cmd.js';
@@ -10,7 +11,8 @@ import logging from './commands/logging/cmd.js';
 import script from './commands/script/cmd.js';
 import emailTemplate from './commands/email_templates/cmd.js';
 import storage from './storage/SessionStorage.js';
-import pkg from '../package.json';
+import application from './commands/application/cmd.js';
+import pkg from '../package.json' assert { type: 'json' };
 
 const program = new Command(pkg.name).version(
   `v${pkg.version} [${process.version}]`,
@@ -23,13 +25,15 @@ storage.session.setFrodoVersion(`v${pkg.version} [${process.version}]`);
   try {
     initConnections();
 
+    program.addCommand(admin());
+    program.addCommand(application());
     program.addCommand(connections());
-    program.addCommand(info());
-    program.addCommand(journey());
-    program.addCommand(script());
     program.addCommand(emailTemplate());
     program.addCommand(idm());
+    program.addCommand(info());
+    program.addCommand(journey());
     program.addCommand(logging());
+    program.addCommand(script());
 
     program.showHelpAfterError();
     program.parse();
